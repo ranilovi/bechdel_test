@@ -1,0 +1,203 @@
+---
+title: "bechdel_dora_ranilovic"
+author: "Dora Ranilovic"
+date: "November 4, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# My Bechdel Test
+
+Importing libraries
+```{r}
+library(readr)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(RColorBrewer)
+``` 
+
+
+
+Importing the New Bechdel Test Data for 50 Top movies in 2016
+```{r}
+
+new_bechdel <- read_csv("https://raw.githubusercontent.com/fivethirtyeight/data/master/next-bechdel/nextBechdel_allTests.csv")
+View(new_bechdel)
+```
+
+##Fetching data 
+
+Importing the cast and crew data from the fivethirtyeight project
+```{r}
+cast_gender <- read_csv("https://raw.githubusercontent.com/fivethirtyeight/data/master/next-bechdel/nextBechdel_castGender.csv")
+
+#crew_gender <- read_csv("https://raw.githubusercontent.com/fivethirtyeight/data/master/next-bechdel/nextBechdel_crewGender.csv")
+#crew_gender data will be read locally since modifications (formatting) to the original data was made (remove dates and underscore from movie names)
+##removing the traling year from the name 
+#crew_gender %>% mutate(MOVIE=gsub(pattern="_(2016)$", replacement = '',x= MOVIE))
+#write.csv(crew_gender,file = "data/crew_gender.csv")
+crew_gender <- read.csv("data/crew_gender.csv")
+```
+
+Performing basic data exploration on the cast and crew datasets
+```{r}
+View(cast_gender)
+glimpse(cast_gender)
+summary(cast_gender)
+cast_gender %>% group_by(MOVIE) %>% summarise(n())
+
+View(crew_gender)
+glimpse(crew_gender)
+summary(crew_gender)
+crew_gender %>% group_by(MOVIE) %>% summarise(n())
+```
+
+```{r}
+crew_gender_diane <- read.csv("data/crew_dataset.csv")
+View(crew_gender_diane)
+crew_gender_diane %>% filter(gender_guess %in% c("male","female")) %>% group_by(title) %>% summarise(n())
+```
+## Motivation
+
+My plan is to perform a test that checks female represenation both in front and behind the camera. Therefore it will have a component that which examines the representation in the cast, and in the crew. First we will clean the data we feched above and transform it into a ready-to-use format to build the test.  
+
+## Data Cleaning and Exploration
+
+###Cast dataset
+This dataset is already complete and fairly clean, no modifications to the dataset will be done.
+
+I would like to see the general male:female split of the cast, per film:
+```{r}
+#computing the absolute split 
+cast_split <- 
+cast_gender %>% group_by(MOVIE,GENDER) %>% 
+  summarise(number=n()) %>% 
+  spread(key = GENDER,value = number) %>% 
+  replace(.,is.na(.),0) %>% 
+  mutate(total=sum(Female,Male,Unknown)) %>% 
+  arrange(desc(Female/total))
+View(cast_split)
+#computing proportions
+ cast_split_prop <- cast_split %>% 
+  mutate_if(is.numeric, funs(prop=./total)) %>% 
+  select(MOVIE,Female_prop,Male_prop,Unknown_prop) %>% 
+  mutate(Female=Female_prop,Male=Male_prop,Unknown=Unknown_prop) %>% 
+  gather('Female','Male','Unknown',key = "Gender",value="Proportion")
+  
+#plot the proportions
+ggplot(cast_split_prop, aes(fill=Gender, y=Proportion, x=MOVIE)) + 
+    geom_bar( stat="identity", position="fill")+
+  scale_fill_brewer(palette = "Pastel1")+
+  theme(axis.text.x=element_blank())+
+  ggtitle("Cast Gender Split") +
+  xlab("Movie X") + ylab("Proportion")
+ 
+  
+```
+
+Although in minority for the most part (which we learned from the fivethirtyeight prject as well), we see that women are present in casts of all 50 movies. The rationalle for showing the proportion on "Unknown" gender is to not make any erroneous assumptions about the cast member whose gender we aren't sure of (also keep the reader aware of the intrinsic inaccuracy of te dataset), which could skew the analysys in either direction, and to leave a "buffer" when making any claims about the female representation in each film. 
+
+
+###Crew dataset
+
+We will now perform the analogous inquiry on the crew dataset(s). Since there are only data for the 19 of the 50 films, there will be some intrinsic limitations to drawing conclusive results, however the logic used can be extended to any number of films. 
+
+In this dataset there are two differnt missing gender data types that will be dealt with differently. Entries with the Gender Guess marker NA seem to come from incorrectly preprocessed data on which first name analysis couldn't be done (first names are non-sensical, NAs, contain special characters, URL substrings etc.). These entries will be deleted and ignored in the analysis. On the other hand, entries with the Gender Guess "null" seem to come from real names for which the gender guess score couldn't be computed (rare, ambigous, non-English/European names). Those will be treated same as the "Unknown" gender above.
+```{r}
+#Removing the faulty data
+crew_gender <- crew_gender %>% filter(!is.na(GENDER_GUESS))
+
+#computing the absolute split 
+crew_split <- 
+crew_gender %>%  
+  mutate(GENDER_GUESS=as.character(GENDER_GUESS) )%>% 
+  mutate(MOVIE=as.character(MOVIE) )%>% 
+  mutate(GENDER_GUESS= replace(GENDER_GUESS,GENDER_GUESS=="null","Unknown") )%>% 
+  mutate(MOVIE= replace(MOVIE,MOVIE=="Rogue One","Rogue One: A Star Wars Story") )%>% 
+  group_by(MOVIE,GENDER_GUESS) %>%
+  summarise(number=n())  %>% 
+  spread(key = GENDER_GUESS,value = number)  %>% 
+  replace(.,is.na(.),0)  %>% 
+  mutate(total=sum(female,male,Unknown)) %>% 
+  arrange(desc(female/total))
+View(crew_split)
+#computing proportions
+ crew_split_prop <- crew_split %>% 
+  mutate_if(is.numeric, funs(prop=./total)) %>% 
+  select(MOVIE,female_prop,male_prop,Unknown_prop) %>% 
+  mutate(Female=female_prop,Male=male_prop,Unknown=Unknown_prop) %>% 
+  gather('Female','Male','Unknown',key = "Gender",value="Proportion")
+  
+#plot the proportions
+ggplot(crew_split_prop, aes(fill=Gender, y=Proportion, x=MOVIE)) + 
+    geom_bar( stat="identity", position="fill")+
+  scale_fill_brewer(palette = "Pastel1")+
+  theme(axis.text.x=element_blank())+
+  ggtitle("Crew Gender Split") +
+  xlab("Movie X") + ylab("Proportion")
+
+```
+Unfortunately, but as expected, only a handful of films have enough data on the crew members to examine the male-female split. Assuming most crews aren't 1-3 people, it will be diffficult extract much meaningful information about the true female representation. 
+
+##Building the test
+
+
+Cognisant  of the nature and limitations of both datasets, I propose to deploy the following test: 
+  
+  A movie passes if there is at least one woman in the cast of at least 2 people AND at least one woman in the crew of at least two people. If the   cast(resp. crew) only contains one person, it's considered a pass for the cast (resp. crew) portion. For example, if a movie has a cast of one male and crew of one male it is a pass; but if it has a cast of one male and crew of two males it is not a pass.
+  
+In this analysis movies that have don't have any crew data, and pass the cast portion, will be given a conditional pass. Those that fail the cast portion will immediately fail.
+
+```{r}
+#calculating the cast results portion
+cast_result <- 
+  cast_split %>% 
+  mutate(pass_cast=as.numeric((total>1 & Female>=1) | (total==1))) %>% 
+  select(MOVIE, pass_cast)
+
+#calculating the crew results portion
+crew_result <- 
+  crew_split %>% 
+  mutate(pass_crew=as.numeric((total>1 & female>=1) | (total==1))) %>% 
+  select(MOVIE, pass_crew)
+
+#jointing and comparing the two tables
+#must make sure movie names match exactly in the two tables (Rogue One name was changed above to the able to complete the join)
+#rules for final pass/fail explained above
+results <- 
+  cast_result %>% left_join(crew_result, by="MOVIE") %>% 
+  mutate(pass_final=
+  case_when(
+    is.na(pass_crew) && pass_cast==1 ~"Cond Pass",
+    is.na(pass_crew) && is.na(pass_cast) ~ "Inconclusive",
+    pass_crew==1 && is.na(pass_cast)~"Cond Pass",
+    pass_crew==1 && pass_cast==1 ~"Pass",
+    pass_crew==0 && pass_cast==1 ~"Fail",
+    pass_crew==1 && pass_cast==0 ~"Fail",
+  ))
+head (results,n=50)
+
+ggplot(results, aes(x=as.factor(pass_final))) + 
+    geom_bar() +
+  ggtitle("Test Results") +
+  xlab("Test Decision") + ylab("# Movies")
+
+results %>% group_by(pass_final) %>% summarise(n=n())
+
+```
+
+As we can see from the results above, of the 19 films with both cast and crew data available, only two (Alice through the looking glass and Suicide Squad) fail the test and 17 pass. Moreover, of the remaining 31 films, all 31 pass conditionally, that is they all have at least one woman in the cast. 
+
+It is obvious that this test if very lenient and all films (especially large mainstrem productions) should have no problem passing this this. Even the 2 films which "failed" this analysis probably did so due to lack of data and not because their crews contain 0 women. However, I think this approach is rational because it only flags the absolute worst offenders, and begins from the assumption that there is no systematic discrimination of women in film. Therefore, there is very low risk that it would conclude that there is a problem (i.e. discimination) when there isn't. Therefore this kind of test would be appropriate to use as a rule of thumb when startign new film, especially at a more granular level (ex. ensure there is at least one woman in each team/department/function etc.) This test would not however raise any flags in situations where there is an overwhelming majority of men across various roles/functions in the film industry. Therefore I would try to use it in situtations where the evaluetion groups are no larger than 10-12 people. In this case the strict requirement for ALL groups to pass would compensate for the low requirement of only 1 woman per group.
+  
+
+  
+
+
+
+
